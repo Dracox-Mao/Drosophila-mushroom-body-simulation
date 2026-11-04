@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#03060e">
+<title>MUSHROOM BODY · 果蝇蘑菇体神经模拟</title>
+<link rel="stylesheet" href="./css/app.css?v=13">
+</head>
+<body>
+
+<canvas id="gl"></canvas>
+
+<!-- ============ 顶部状态条 ============ -->
+<header id="topbar">
+  <div class="brand">
+    <span class="dot"></span>
+    <b>MUSHROOM BODY</b>
+    <i>Drosophila melanogaster · 蘑菇体实时模拟</i>
+  </div>
+  <div class="meter-wrap">
+    <div class="meter"><label>DA 多巴胺</label><div class="bar"><span id="bar-da"></span></div><em id="val-da">0.00</em></div>
+    <div class="meter"><label>OA 唤醒</label><div class="bar"><span id="bar-oa"></span></div><em id="val-oa">0.00</em></div>
+    <div class="meter"><label>KC 活跃</label><div class="bar"><span id="bar-kc"></span></div><em id="val-kc">0</em></div>
+    <div class="meter"><label>记忆痕迹</label><div class="bar mem"><span id="bar-mem"></span></div><em id="val-mem">0.00</em></div>
+  </div>
+  <div class="tb-right">
+    <span id="fps">-- fps</span>
+    <button id="btn-report" class="icon-btn" title="导出神经快照">⬇</button>
+    <button id="btn-settings" class="icon-btn" title="设置 / API Key">⚙</button>
+  </div>
+</header>
+
+<!-- ============ 左侧：刺激位点 ============ -->
+<aside id="side">
+  <div class="panel-head">
+    <h3>刺激位点</h3>
+    <button id="side-toggle" class="mini">–</button>
+  </div>
+  <div class="panel-body">
+    <ul id="site-list"></ul>
+    <div class="hint">拖动旋转 · 双指缩放 · 点位可点</div>
+  </div>
+</aside>
+
+<!-- ============ 右下：果蝇自我 ============ -->
+<section id="flypanel">
+  <div class="panel-head">
+    <h3><span class="fly-dot"></span>果蝇 · 自我报告</h3>
+    <div class="ph-actions">
+      <button id="btn-fly-open" class="mini">展开</button>
+    </div>
+  </div>
+  <div class="panel-body">
+    <div id="fly-state-chips"></div>
+    <div id="fly-dialog"></div>
+    <div class="fly-input">
+      <input id="fly-ask" type="text" placeholder="对它说点什么…（可留空让它自述）" />
+      <button id="btn-fly-say" class="mini accent">说</button>
+      <button id="btn-fly-think" class="mini" title="让它自言自语，无需输入">想</button>
+    </div>
+    <div id="fly-offline" class="offline-tip">
+      未配置 API Key —— 点右上角 ⚙ 填入 OpenAI 兼容接口，它才会真正“醒过来”
+    </div>
+  </div>
+</section>
+
+<!-- ============ 底部控制 ============ -->
+<footer id="bottombar">
+  <div class="ctl">
+    <label>强度</label>
+    <input id="strength" type="range" min="0.1" max="2" step="0.05" value="1">
+    <em id="strength-v">1.00</em>
+  </div>
+  <div class="ctl">
+    <label>速度</label>
+    <input id="speed" type="range" min="0" max="14" step="1" value="4">
+    <em id="speed-v">4×</em>
+  </div>
+  <div class="btns">
+    <button id="btn-pause" class="mini">⏸ 暂停</button>
+    <button id="btn-reset" class="mini">↺ 重置</button>
+    <button id="btn-top" class="mini">⌖ 正视</button>
+  </div>
+</footer>
+
+<!-- ============ 刺激 toast ============ -->
+<div id="toast"></div>
+
+<!-- ============ 设置抽屉 ============ -->
+<div id="drawer-mask"></div>
+<div id="drawer">
+  <div class="drawer-head">
+    <h2>设置</h2>
+    <button id="drawer-close" class="icon-btn">✕</button>
+  </div>
+  <div class="drawer-body">
+
+    <h4>LLM 接口（OpenAI 兼容）</h4>
+    <div class="field">
+      <label>Base URL</label>
+      <input id="cfg-base" type="text" placeholder="https://api.deepseek.com/v1" autocomplete="off" spellcheck="false">
+    </div>
+    <div class="field">
+      <label>Model</label>
+      <input id="cfg-model" type="text" placeholder="deepseek-chat" autocomplete="off" spellcheck="false">
+    </div>
+    <div class="field">
+      <label>API Key</label>
+      <input id="cfg-key" type="password" placeholder="sk-..." autocomplete="off" spellcheck="false">
+      <div class="field-note">密钥只存在本机 localStorage，仅直接发往上面的接口地址。</div>
+    </div>
+    <div class="row2">
+      <div class="field">
+        <label>Temperature</label>
+        <input id="cfg-temp" type="number" min="0" max="2" step="0.1">
+      </div>
+      <div class="field">
+        <label>Max tokens</label>
+        <input id="cfg-maxtok" type="number" min="40" max="1200" step="10">
+      </div>
+    </div>
+    <div class="quick">
+      <button class="chip" data-base="https://api.deepseek.com/v1" data-model="deepseek-chat">DeepSeek</button>
+      <button class="chip" data-base="https://api.openai.com/v1" data-model="gpt-4o-mini">OpenAI</button>
+      <button class="chip" data-base="https://open.bigmodel.cn/api/paas/v4" data-model="glm-4-flash">智谱</button>
+      <button class="chip" data-base="https://api.moonshot.cn/v1" data-model="moonshot-v1-8k">Kimi</button>
+      <button class="chip" data-base="https://dashscope.aliyuncs.com/compatible-mode/v1" data-model="qwen-plus">通义</button>
+    </div>
+    <div class="btns-row">
+      <button id="btn-test" class="mini">测试连接</button>
+      <button id="btn-save" class="mini accent">保存</button>
+    </div>
+
+    <h4>行为</h4>
+    <div class="field">
+      <label>每次施加刺激后自动开口（6 秒节流）</label>
+      <input id="cfg-autospeak" type="checkbox">
+    </div>
+
+    <h4>渲染</h4>
+    <div class="field">
+      <label>纤维亮度</label>
+      <input id="cfg-fiber" type="range" min="0" max="1" step="0.02">
+    </div>
+    <div class="field">
+      <label>自动旋转</label>
+      <input id="cfg-auto" type="checkbox">
+    </div>
+
+    <h4>数据</h4>
+    <div class="btns-row">
+      <button id="btn-export" class="mini">导出观测 JSON</button>
+      <button id="btn-forget" class="mini danger">清空果蝇记忆</button>
+    </div>
+
+    <div class="about">
+      模拟对象：黑腹果蝇蘑菇体（Kenyon 细胞 560 根纤维 + 投射神经元 + 多巴胺能簇 + 中央复合体）。<br>
+      模型：漏积分发放（LIF）+ 稀疏编码 + 多巴胺门控突触可塑（三因子规则）。<br>
+      说明：这是教学/艺术化的近似模型，不是生物学定量仿真。
+    </div>
+  </div>
+</div>
+
+<script src="./vendor/three.min.js"></script>
+<script src="./vendor/shaders/CopyShader.js"></script>
+<script src="./vendor/shaders/LuminosityHighPassShader.js"></script>
+<script src="./vendor/postprocessing/EffectComposer.js"></script>
+<script src="./vendor/postprocessing/RenderPass.js"></script>
+<script src="./vendor/postprocessing/ShaderPass.js"></script>
+<script src="./vendor/postprocessing/MaskPass.js"></script>
+<script src="./vendor/postprocessing/UnrealBloomPass.js"></script>
+<script src="./js/net.js?v=13"></script>
+<script src="./js/sim.js?v=13"></script>
+<script src="./js/render.js?v=13"></script>
+<script src="./js/llm.js?v=13"></script>
+<script src="./js/main.js?v=13"></script>
+</body>
+</html>
